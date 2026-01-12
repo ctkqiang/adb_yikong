@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"yikong/internal/http"
 	"yikong/internal/logging"
+	"yikong/internal/utilities"
 )
 
 func SetupADB() error {
@@ -27,6 +28,30 @@ func SetupADB() error {
 			os.Exit(1)
 		}
 
+		logging.Info("正在解压到 %s...\n", extractPath)
+
+		if err := utilities.ExtractZipWindows(zipPath, extractPath); err != nil {
+			logging.Error("解压失败: %v", err)
+			os.Exit(1)
+		}
+
+		logging.Info("正在添加到系统 PATH 环境变量...")
+
+		if err := utilities.Add_TO_WINDOW_PATH(extractPath); err != nil {
+			logging.Error("添加到 PATH 环境变量失败: %v", err)
+			os.Exit(1)
+		}
+
+		os.Remove(zipPath)
+		logging.Info("ADB 安装成功！")
+		logging.Info("请重启终端以使 PATH 更改生效。")
+
+	case "darwin":
+	case "linux":
+
+	default:
+		logging.Error("不支持的操作系统: %s", operating_system)
+		os.Exit(1)
 	}
 
 	return nil
