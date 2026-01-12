@@ -1,7 +1,7 @@
 package main
 
 import (
-	"yikong/config"
+	config "yikong/internal/constants"
 
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"

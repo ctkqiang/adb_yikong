@@ -1,14 +1,14 @@
 package config
 
 import (
-	"fmt"
 	"runtime"
+	"yikong/internal/logging"
 )
 
 func SetupADB() error {
 	operating_system := runtime.GOOS
 
-	fmt.Println("操作系统:", operating_system)
+	logging.Info("操作系统:", operating_system)
 
 	return nil
 }
