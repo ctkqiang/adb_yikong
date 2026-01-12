@@ -23,9 +23,6 @@ func main() {
 
 	window.Resize(fyne.NewSize(1200, 600))
 	window.SetFixedSize(true)
-
 	window.SetContent(mainUi)
-
 	window.ShowAndRun()
-
 }
