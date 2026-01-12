@@ -58,7 +58,7 @@ func InstallViaHomebrew() error {
 	return nil
 }
 
-func setupMacAdbPath(installation_path string) error {
+func SetupMacAdbPath(installation_path string) error {
 	logging.Info("\n📝 To add ADB to your PATH:")
 
 	shellConfig := ""
