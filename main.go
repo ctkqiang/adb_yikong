@@ -5,6 +5,7 @@ import (
 	constant "yikong/internal/constants"
 	"yikong/internal/logging"
 
+	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
@@ -20,6 +21,9 @@ func main() {
 	window := application.NewWindow(constant.AppName)
 
 	hello := widget.NewLabel(constant.AppName)
+
+	window.Resize(fyne.NewSize(1200, 600))
+	window.SetFixedSize(true)
 
 	window.SetContent(container.NewVBox(
 		hello,
