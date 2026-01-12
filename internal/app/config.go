@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"yikong/internal/http"
 	"yikong/internal/logging"
 )
 
@@ -19,7 +20,12 @@ func SetupADB() error {
 		zipPath := filepath.Join(tempDir, "adb.zip")
 		extractPath := "C:\\platform-tools"
 
-		logging.Debug("Downloading from %s...", win_url)
+		logging.Debug("正在从 %s 下载...", win_url)
+
+		if err := http.DownloadFile(win_url, zipPath); err != nil {
+			logging.Error("下载失败: %v", err)
+			os.Exit(1)
+		}
 
 	}
 
