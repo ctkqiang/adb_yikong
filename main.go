@@ -4,11 +4,10 @@ import (
 	config "yikong/internal/app"
 	constant "yikong/internal/constants"
 	"yikong/internal/logging"
+	"yikong/internal/ui"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
-	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/widget"
 )
 
 func main() {
@@ -20,17 +19,12 @@ func main() {
 	application := app.New()
 	window := application.NewWindow(constant.AppName)
 
-	hello := widget.NewLabel(constant.AppName)
+	mainUi := ui.MainUI(window)
 
 	window.Resize(fyne.NewSize(1200, 600))
 	window.SetFixedSize(true)
 
-	window.SetContent(container.NewVBox(
-		hello,
-		widget.NewButton("Hi!", func() {
-			hello.SetText("Welcome :)")
-		}),
-	))
+	window.SetContent(mainUi)
 
 	window.ShowAndRun()
 
