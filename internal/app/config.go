@@ -47,8 +47,9 @@ func SetupADB() error {
 		logging.Info("请重启终端以使 PATH 更改生效。")
 
 	case "darwin":
+		utilities.InstallViaHomebrew()
 	case "linux":
-
+		utilities.InstallADBLinux()
 	default:
 		logging.Error("不支持的操作系统: %s", operating_system)
 		os.Exit(1)
