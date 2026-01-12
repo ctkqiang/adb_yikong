@@ -2,12 +2,51 @@ package config
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"yikong/internal/http"
 	"yikong/internal/logging"
 	"yikong/internal/utilities"
 )
+
+func InspectIsADBExisted() bool {
+	cmd := exec.Command("adb", "version")
+
+	if err := cmd.Run(); err == nil {
+		logging.Info("已通过PATH环境变量找到ADB")
+		return true
+	}
+
+	pathDirs := strings.Split(os.Getenv("PATH"), string(os.PathListSeparator))
+
+	for _, dir := range pathDirs {
+		adbPath := filepath.Join(dir, "adb")
+		if runtime.GOOS == "windows" {
+			adbPath += ".exe"
+		}
+
+		if _, err := os.Stat(adbPath); err == nil {
+			return true
+		}
+	}
+
+	commonPaths := []string{
+		"C:\\platform-tools\\adb.exe",
+		"/usr/local/bin/adb",
+		"/opt/homebrew/bin/adb",
+		filepath.Join(os.Getenv("HOME"), "platform-tools", "adb"),
+	}
+
+	for _, path := range commonPaths {
+		if _, err := os.Stat(path); err == nil {
+			return true
+		}
+	}
+
+	return false
+}
 
 func SetupADB() error {
 	operating_system := runtime.GOOS

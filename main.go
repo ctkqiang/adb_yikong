@@ -1,7 +1,9 @@
 package main
 
 import (
-	config "yikong/internal/constants"
+	config "yikong/internal/app"
+	constant "yikong/internal/constants"
+	"yikong/internal/logging"
 
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
@@ -9,10 +11,15 @@ import (
 )
 
 func main() {
-	application := app.New()
-	window := application.NewWindow(config.AppName)
+	if !config.InspectIsADBExisted() {
+		logging.Error("未找到ADB, 请先安装ADB")
+		return
+	}
 
-	hello := widget.NewLabel(config.AppName)
+	application := app.New()
+	window := application.NewWindow(constant.AppName)
+
+	hello := widget.NewLabel(constant.AppName)
 
 	window.SetContent(container.NewVBox(
 		hello,
