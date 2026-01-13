@@ -67,7 +67,7 @@ func InspectIsADBExisted() bool {
 func SetupADB() error {
 	operating_system := runtime.GOOS
 
-	logging.Info("操作系统:", operating_system)
+	logging.Info("操作系统: %s", operating_system)
 
 	switch operating_system {
 	case "windows":

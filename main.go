@@ -17,6 +17,7 @@ import (
 var iconBytes []byte
 
 func main() {
+
 	if _, err := os.Stat("assets/logo.png"); os.IsNotExist(err) {
 		logging.Error("图标文件不存在: %s", err)
 	} else {
@@ -41,12 +42,14 @@ func main() {
 		appIcon = theme.ComputerIcon()
 	} else {
 		appIcon = &fyne.StaticResource{
-			StaticName:    "logo.png",
+			StaticName:    "assets/logo.png",
 			StaticContent: iconBytes,
 		}
 	}
 
 	application.SetIcon(appIcon)
+	application.Settings().ShowAnimations()
+
 	window.SetIcon(appIcon)
 
 	mainUi := ui.MainUI(window)

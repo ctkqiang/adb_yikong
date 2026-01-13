@@ -17,6 +17,11 @@ func SystemTray(application fyne.App, window fyne.Window) error {
 			fyne.NewMenuItem("显示", func() {
 				window.Show()
 			}),
+
+			fyne.NewMenuItem("关于", func() {
+				InfoDialog(window, constants.AppName+" v"+constants.Version+"\n作者: "+constants.Author+"\n邮箱: "+constants.AuthorEmail, true)
+			}),
+
 			fyne.NewMenuItem("退出", func() {
 				application.Quit()
 			}),
