@@ -50,6 +50,8 @@ func main() {
 	application.SetIcon(appIcon)
 	application.Settings().ShowAnimations()
 
+	ui.SetCustomIcon(appIcon)
+
 	window.SetIcon(appIcon)
 
 	mainUi := ui.MainUI(window)
