@@ -2,31 +2,24 @@ package logging
 
 import (
 	"fmt"
-	"strings"
 	config "yikong/internal/constants"
 )
 
-func Info(a ...any) (int, error) {
-	return fmt.Println("\033[32m" + config.AppName + " [信息]" + strings.Join(convertToStrings(a), "") + "\033[0m")
+func Info(format string, a ...any) (int, error) {
+	message := fmt.Sprintf(format, a...)
+	return fmt.Println("\033[32m" + config.AppName + " [信息]" + message + "\033[0m")
 }
-func Debug(a ...any) (int, error) {
-	return fmt.Println("\033[33m" + config.AppName + " [调试]" + strings.Join(convertToStrings(a), "") + "\033[0m")
-}
-
-func Error(a ...any) (int, error) {
-	return fmt.Println("\033[31m" + config.AppName + " [错误]" + strings.Join(convertToStrings(a), "") + "\033[0m")
+func Debug(format string, a ...any) (int, error) {
+	message := fmt.Sprintf(format, a...)
+	return fmt.Println("\033[33m" + config.AppName + " [调试]" + message + "\033[0m")
 }
 
-func Warn(a ...any) (int, error) {
-	return fmt.Println("\033[33m" + config.AppName + " [警告]" + strings.Join(convertToStrings(a), "") + "\033[0m")
+func Error(format string, a ...any) (int, error) {
+	message := fmt.Sprintf(format, a...)
+	return fmt.Println("\033[31m" + config.AppName + " [错误]" + message + "\033[0m")
 }
 
-func convertToStrings(a []any) []string {
-	s := make([]string, len(a))
-
-	for i, v := range a {
-		s[i] = fmt.Sprint(v)
-	}
-
-	return s
+func Warn(format string, a ...any) (int, error) {
+	message := fmt.Sprintf(format, a...)
+	return fmt.Println("\033[33m" + config.AppName + " [警告]" + message + "\033[0m")
 }

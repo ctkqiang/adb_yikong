@@ -14,6 +14,7 @@ func MainUI(window fyne.Window) fyne.CanvasObject {
 		widget.NewButton("应用", func() { hello.SetText("应用管理") }),
 		widget.NewButton("日志", func() { hello.SetText("日志查看") }),
 		widget.NewButton("文件", func() { hello.SetText("文件传输") }),
+		widget.NewButton("设置", func() { hello.SetText("设置") }),
 	)
 
 	return container.NewHSplit(
@@ -22,6 +23,7 @@ func MainUI(window fyne.Window) fyne.CanvasObject {
 			nil, nil, nil,
 			sidebar,
 		),
+
 		container.NewVBox(
 			hello,
 			widget.NewButton("Hi!", func() {
