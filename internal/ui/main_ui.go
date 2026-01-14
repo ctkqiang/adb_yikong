@@ -2,8 +2,10 @@ package ui
 
 import (
 	"image/color"
+	"strconv"
 	"time"
 	"yikong/internal/adb"
+	"yikong/internal/constants"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -147,16 +149,11 @@ func (ui *UI) createFunctionPage() fyne.CanvasObject {
 		widget.NewLabel("等待选择功能..."),
 	)
 
-	featureButtons := []struct {
-		name     string
-		icon     fyne.Resource
-		callback func()
-	}{
-		{"设备管理", theme.SettingsIcon(), func() { deviceInfo.SetContent(widget.NewLabel("设备管理功能")) }},
-		{"应用管理", theme.DocumentSaveIcon(), func() { deviceInfo.SetContent(widget.NewLabel("应用管理功能")) }},
-		{"日志查看", theme.DocumentPrintIcon(), func() { deviceInfo.SetContent(widget.NewLabel("日志查看功能")) }},
-		{"文件传输", theme.MailSendIcon(), func() { deviceInfo.SetContent(widget.NewLabel("文件传输功能")) }},
-		{"设置", theme.SettingsIcon(), func() { deviceInfo.SetContent(widget.NewLabel("设置功能")) }},
+	iconMap := map[string]func() fyne.Resource{
+		"SettingsIcon":      theme.SettingsIcon,
+		"DocumentSaveIcon":  theme.DocumentSaveIcon,
+		"DocumentPrintIcon": theme.DocumentPrintIcon,
+		"MailSendIcon":      theme.MailSendIcon,
 	}
 
 	buttonGrid := container.NewGridWithColumns(2,
@@ -164,8 +161,43 @@ func (ui *UI) createFunctionPage() fyne.CanvasObject {
 		container.NewVBox(),
 	)
 
-	for idx, feature := range featureButtons {
-		btnContainer := ui.createFeatureButton(feature.name, feature.icon, feature.callback)
+	featureOrder := []string{"device_management", "app_management", "log_viewing", "file_transfer", "settings"}
+
+	for idx, featureID := range featureOrder {
+		config, exists := constants.FeatureMap[featureID]
+		if !exists {
+			// 如果配置不存在，使用默认值
+			defaultConfig := constants.FeatureConfig{
+				ID:           featureID,
+				Name:         "未知功能",
+				Description:  "功能配置不存在",
+				IconName:     "SettingsIcon",
+				CommandGroup: []string{},
+				DefaultLabel: "功能未配置",
+			}
+			config = defaultConfig
+		}
+
+		iconFunc, iconExists := iconMap[config.IconName]
+
+		var icon fyne.Resource
+
+		if iconExists {
+			icon = iconFunc()
+		} else {
+			icon = theme.SettingsIcon() // 默认图标
+		}
+
+		// 创建回调函数，显示功能详情
+		callback := func(featureConfig constants.FeatureConfig) func() {
+			return func() {
+				// 创建功能详情界面
+				content := ui.createFeatureDetailContent(featureConfig)
+				deviceInfo.SetContent(content)
+			}
+		}(config)
+
+		btnContainer := ui.createFeatureButton(config.Name, icon, callback)
 		if idx < 3 {
 			buttonGrid.Objects[0].(*fyne.Container).Add(btnContainer)
 		} else {
@@ -281,4 +313,194 @@ func (ui *UI) showFunctionPage() {
 	}
 	ui.mainContainer.Objects[1].Show()
 	ui.mainContainer.Refresh()
+}
+
+func (ui *UI) createDeviceManagementPage() fyne.CanvasObject {
+	// 创建标题
+	title := widget.NewLabel("设备管理")
+	title.TextStyle = fyne.TextStyle{Bold: true}
+	title.Alignment = fyne.TextAlignCenter
+
+	// 创建设备列表容器
+	devicesLabel := widget.NewLabel("已连接设备:")
+	devicesLabel.TextStyle = fyne.TextStyle{Bold: true}
+
+	// 创建设备列表显示
+	var deviceListContainer *fyne.Container
+	deviceListContainer = container.NewVBox()
+
+	// 刷新设备列表的函数
+	refreshDeviceList := func() {
+		devices, err := adb.GetDevices()
+		deviceListContainer.RemoveAll()
+
+		if err != nil {
+			errorLabel := widget.NewLabel("获取设备失败: " + err.Error())
+			errorLabel.TextStyle = fyne.TextStyle{Italic: true}
+			deviceListContainer.Add(errorLabel)
+			return
+		}
+
+		if len(devices) == 0 {
+			noDeviceLabel := widget.NewLabel("没有检测到连接的设备")
+			noDeviceLabel.TextStyle = fyne.TextStyle{Italic: true}
+			deviceListContainer.Add(noDeviceLabel)
+			return
+		}
+
+		for _, device := range devices {
+			deviceCard := canvas.NewRectangle(color.White)
+			deviceCard.CornerRadius = 10
+			deviceCard.StrokeColor = color.NRGBA{R: 200, G: 200, B: 200, A: 255}
+			deviceCard.StrokeWidth = 1
+
+			deviceIcon := widget.NewIcon(theme.ComputerIcon())
+			deviceName := widget.NewLabel(device.Name)
+			deviceName.TextStyle = fyne.TextStyle{Bold: true}
+			deviceID := widget.NewLabel("ID: " + device.ID)
+			deviceID.TextStyle = fyne.TextStyle{Italic: true}
+
+			deviceInfo := container.NewVBox(deviceName, deviceID)
+			deviceContent := container.NewBorder(nil, nil, deviceIcon, nil, deviceInfo)
+			paddedContent := container.NewPadded(deviceContent)
+
+			deviceContainer := container.NewStack(deviceCard, paddedContent)
+			deviceListContainer.Add(deviceContainer)
+		}
+	}
+
+	// 初始刷新设备列表
+	refreshDeviceList()
+
+	// 刷新按钮
+	refreshBtn := widget.NewButtonWithIcon("刷新设备列表", theme.ViewRefreshIcon(), func() {
+		refreshDeviceList()
+	})
+
+	// 操作按钮区域
+	buttonsLabel := widget.NewLabel("设备操作:")
+	buttonsLabel.TextStyle = fyne.TextStyle{Bold: true}
+
+	// 创建设备操作按钮
+	deviceOperations := []struct {
+		name string
+		cmd  string
+	}{
+		{"重启设备", constants.ADBReboot},
+		{"进入Recovery模式", constants.ADBRebootRecovery},
+		{"进入Bootloader", constants.ADBRebootBootloader},
+		{"获取设备序列号", constants.ADBGetSerialNo},
+		{"获取设备状态", constants.ADBGetState},
+	}
+
+	buttonsContainer := container.NewVBox()
+	for _, op := range deviceOperations {
+		btn := widget.NewButton(op.name, func(cmd string) func() {
+			return func() {
+				// 创建执行命令的对话框
+				messageCard := widget.NewCard("执行命令", cmd,
+					widget.NewButton("确定", func() {}),
+				)
+				dialog := widget.NewModalPopUp(messageCard, ui.window.Canvas())
+				dialog.Show()
+			}
+		}(op.cmd))
+		buttonsContainer.Add(btn)
+	}
+
+	// 组合所有组件
+	content := container.NewVBox(
+		title,
+		widget.NewSeparator(),
+		devicesLabel,
+		deviceListContainer,
+		refreshBtn,
+		widget.NewSeparator(),
+		buttonsLabel,
+		buttonsContainer,
+	)
+
+	return container.NewPadded(content)
+}
+
+func (ui *UI) createAppManagementPage() fyne.CanvasObject {
+	return widget.NewLabel("应用管理功能正在开发中...")
+}
+
+func (ui *UI) createLogViewingPage() fyne.CanvasObject {
+	return widget.NewLabel("日志查看功能正在开发中...")
+}
+
+func (ui *UI) createFileTransferPage() fyne.CanvasObject {
+	return widget.NewLabel("文件传输功能正在开发中...")
+}
+
+func (ui *UI) createSettingsPage() fyne.CanvasObject {
+	return widget.NewLabel("设置功能正在开发中...")
+}
+
+func (ui *UI) createFeatureDetailContent(config constants.FeatureConfig) fyne.CanvasObject {
+	// 根据功能ID选择不同的页面实现
+	switch config.ID {
+	case "device_management":
+		return ui.createDeviceManagementPage()
+	case "app_management":
+		return ui.createAppManagementPage()
+	case "log_viewing":
+		return ui.createLogViewingPage()
+	case "file_transfer":
+		return ui.createFileTransferPage()
+	case "settings":
+		return ui.createSettingsPage()
+	}
+
+	// 默认实现：显示命令列表
+	description := widget.NewLabel(config.Description)
+	description.Wrapping = fyne.TextWrapWord
+
+	commandsTitle := widget.NewLabel("相关ADB命令:")
+	commandsTitle.TextStyle = fyne.TextStyle{Bold: true}
+
+	var commandItems []fyne.CanvasObject
+	for _, cmdKey := range config.CommandGroup {
+		// 获取实际命令字符串
+		cmdStr, exists := constants.CommandMap[cmdKey]
+		displayText := cmdKey // 默认显示键名
+		if exists {
+			displayText = cmdStr
+		}
+		cmdLabel := widget.NewLabel("• " + displayText)
+		cmdLabel.Wrapping = fyne.TextWrapWord
+		commandItems = append(commandItems, cmdLabel)
+	}
+
+	// 如果命令组为空，显示提示
+	if len(commandItems) == 0 {
+		noCommands := widget.NewLabel("暂无相关命令")
+		noCommands.TextStyle = fyne.TextStyle{Italic: true}
+		commandItems = append(commandItems, noCommands)
+	}
+
+	commandsContainer := container.NewVBox(commandItems...)
+
+	// 创建分隔线
+	separator := widget.NewSeparator()
+
+	// 创建状态标签
+	statusText := "功能ID: " + config.ID + " | 命令数量: " + strconv.Itoa(len(config.CommandGroup))
+	statusLabel := widget.NewLabel(statusText)
+	statusLabel.TextStyle = fyne.TextStyle{Italic: true}
+	statusLabel.Alignment = fyne.TextAlignCenter
+
+	// 组合所有组件
+	content := container.NewVBox(
+		description,
+		separator,
+		commandsTitle,
+		commandsContainer,
+		widget.NewSeparator(),
+		statusLabel,
+	)
+
+	return container.NewPadded(content)
 }

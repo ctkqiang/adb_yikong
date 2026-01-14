@@ -229,3 +229,102 @@ const (
 	KeyCombinationPowerMenu  = "Power (长按)"
 	KeyCombinationRecentApps = "Home (双击) 或 Recent Apps 键"
 )
+
+// 功能配置结构体
+type FeatureConfig struct {
+	ID           string   // 功能唯一标识
+	Name         string   // 显示名称
+	Description  string   // 功能描述
+	IconName     string   // 图标名称（对应fyne主题图标）
+	CommandGroup []string // 相关的ADB命令常量组
+	DefaultLabel string   // 默认显示的标签文本
+}
+
+// 功能映射表（用于UI功能按钮与ADB命令的映射）
+var FeatureMap = map[string]FeatureConfig{
+	"device_management": {
+		ID:           "device_management",
+		Name:         "设备管理",
+		Description:  "查看和管理已连接的Android设备",
+		IconName:     "SettingsIcon",
+		CommandGroup: []string{"ADBDevices", "ADBDevicesL", "ADBConnect", "ADBUSB", "ADBGetSerialNo", "ADBGetState", "ADBReboot", "ADBRebootRecovery", "ADBRebootBootloader", "ADBRoot"},
+		DefaultLabel: "设备管理功能",
+	},
+	"app_management": {
+		ID:           "app_management",
+		Name:         "应用管理",
+		Description:  "安装、卸载和管理Android应用",
+		IconName:     "DocumentSaveIcon",
+		CommandGroup: []string{"ADBInstall", "ADBInstallR", "ADBInstallK", "ADBUninstall", "ADBUninstallK", "PMListPackages", "PMListPackages3", "PMListPackagesS", "PMUninstall", "PMClear", "PMGrant", "PMRevoke", "PMResetPermissions"},
+		DefaultLabel: "应用管理功能",
+	},
+	"log_viewing": {
+		ID:           "log_viewing",
+		Name:         "日志查看",
+		Description:  "查看和保存设备日志",
+		IconName:     "DocumentPrintIcon",
+		CommandGroup: []string{"ADBLogcat", "ADBLogcatC", "ADBLogcatD", "ADBBugreport"},
+		DefaultLabel: "日志查看功能",
+	},
+	"file_transfer": {
+		ID:           "file_transfer",
+		Name:         "文件传输",
+		Description:  "在设备和电脑之间传输文件",
+		IconName:     "MailSendIcon",
+		CommandGroup: []string{"ADBPush", "ADBPull", "ShellLS", "ShellLSRecursive", "ShellPWD"},
+		DefaultLabel: "文件传输功能",
+	},
+	"settings": {
+		ID:           "settings",
+		Name:         "设置",
+		Description:  "应用程序设置和ADB配置",
+		IconName:     "SettingsIcon",
+		CommandGroup: []string{"ADBKillServer", "ADBStartServer", "ADBHelp", "ADBVersion"},
+		DefaultLabel: "设置功能",
+	},
+}
+
+// 命令映射表（ADB命令常量名到实际命令字符串的映射）
+var CommandMap = map[string]string{
+	// 设备管理命令
+	"ADBDevices":          ADBDevices,
+	"ADBDevicesL":         ADBDevicesL,
+	"ADBConnect":          ADBConnect,
+	"ADBUSB":              ADBUSB,
+	"ADBGetSerialNo":      ADBGetSerialNo,
+	"ADBGetState":         ADBGetState,
+	"ADBReboot":           ADBReboot,
+	"ADBRebootRecovery":   ADBRebootRecovery,
+	"ADBRebootBootloader": ADBRebootBootloader,
+	"ADBRoot":             ADBRoot,
+	// 应用管理命令
+	"ADBInstall":         ADBInstall,
+	"ADBInstallR":        ADBInstallR,
+	"ADBInstallK":        ADBInstallK,
+	"ADBUninstall":       ADBUninstall,
+	"ADBUninstallK":      ADBUninstallK,
+	"PMListPackages":     PMListPackages,
+	"PMListPackages3":    PMListPackages3,
+	"PMListPackagesS":    PMListPackagesS,
+	"PMUninstall":        PMUninstall,
+	"PMClear":            PMClear,
+	"PMGrant":            PMGrant,
+	"PMRevoke":           PMRevoke,
+	"PMResetPermissions": PMResetPermissions,
+	// 日志查看命令
+	"ADBLogcat":    ADBLogcat,
+	"ADBLogcatC":   ADBLogcatC,
+	"ADBLogcatD":   ADBLogcatD,
+	"ADBBugreport": ADBBugreport,
+	// 文件传输命令
+	"ADBPush":          ADBPush,
+	"ADBPull":          ADBPull,
+	"ShellLS":          ShellLS,
+	"ShellLSRecursive": ShellLSRecursive,
+	"ShellPWD":         ShellPWD,
+	// 设置命令
+	"ADBKillServer":  ADBKillServer,
+	"ADBStartServer": ADBStartServer,
+	"ADBHelp":        ADBHelp,
+	"ADBVersion":     ADBVersion,
+}
