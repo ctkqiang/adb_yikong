@@ -58,8 +58,7 @@ func main() {
 		logging.Error("%s", "系统托盘初始化失败: "+err.Error())
 	}
 
-	window.Resize(fyne.NewSize(400, 800))
-	window.SetFixedSize(true)
+	window.Resize(fyne.NewSize(1024, 768))
 	window.SetContent(mainUi)
 
 	window.SetCloseIntercept(func() {
