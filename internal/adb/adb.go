@@ -4,3 +4,4 @@ func AdbCommand(args string) error {
 
 	return nil
 }
+
