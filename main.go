@@ -10,7 +10,6 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
-	"fyne.io/fyne/v2/theme"
 )
 
 //go:embed assets/logo.png
@@ -39,7 +38,6 @@ func main() {
 
 	if len(iconBytes) == 0 {
 		logging.Warn("图标文件为空，使用默认图标")
-		appIcon = theme.ComputerIcon()
 	} else {
 		appIcon = &fyne.StaticResource{
 			StaticName:    "assets/logo.png",
@@ -60,7 +58,7 @@ func main() {
 		logging.Error("%s", "系统托盘初始化失败: "+err.Error())
 	}
 
-	window.Resize(fyne.NewSize(1200, 600))
+	window.Resize(fyne.NewSize(400, 800))
 	window.SetFixedSize(true)
 	window.SetContent(mainUi)
 
