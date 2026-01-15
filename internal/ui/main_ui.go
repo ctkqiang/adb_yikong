@@ -574,6 +574,7 @@ func (ui *UI) createLogViewingPage() fyne.CanvasObject {
 
 	fetchLogBtn = widget.NewButton("获取日志", func() {
 		if ui.selectedDevice == "" {
+			statusLabel.SetText("状态: 请先选择一个设备")
 			var dialog *widget.PopUp
 			btn := widget.NewButton("确定", func() {
 				if dialog != nil {
@@ -597,6 +598,7 @@ func (ui *UI) createLogViewingPage() fyne.CanvasObject {
 				fetchLogBtn.Enable()
 				if err != nil {
 					logging.Error("获取日志失败: deviceID=%s, 错误: %v", ui.selectedDevice, err)
+					statusLabel.SetText(fmt.Sprintf("状态: 获取日志失败 - %v", err))
 					var dialog *widget.PopUp
 					btn := widget.NewButton("确定", func() {
 						if dialog != nil {
@@ -696,6 +698,7 @@ func (ui *UI) createLogViewingPage() fyne.CanvasObject {
 
 	clearLogBtn = widget.NewButton("清除日志", func() {
 		if ui.selectedDevice == "" {
+			statusLabel.SetText("状态: 请先选择一个设备")
 			var dialog *widget.PopUp
 			btn := widget.NewButton("确定", func() {
 				if dialog != nil {
@@ -714,6 +717,7 @@ func (ui *UI) createLogViewingPage() fyne.CanvasObject {
 			fyne.Do(func() {
 				clearLogBtn.Enable()
 				if err != nil {
+					statusLabel.SetText(fmt.Sprintf("状态: 清除日志失败 - %v", err))
 					var dialog *widget.PopUp
 					btn := widget.NewButton("确定", func() {
 						if dialog != nil {
@@ -727,6 +731,7 @@ func (ui *UI) createLogViewingPage() fyne.CanvasObject {
 				}
 				// 显示成功消息
 				logDisplay.SetText("日志缓冲区已清除")
+				statusLabel.SetText("状态: 日志缓冲区已成功清除")
 			})
 		}()
 	})
@@ -734,13 +739,16 @@ func (ui *UI) createLogViewingPage() fyne.CanvasObject {
 
 	saveLogBtn = widget.NewButton("保存日志", func() {
 		// 保存日志功能暂未实现
-		infoCard := widget.NewCard("提示", "保存日志功能正在开发中",
-			widget.NewButton("确定", func() {
-
-			}),
-		)
-		dialog := widget.NewModalPopUp(infoCard, ui.window.Canvas())
-		dialog.Show()
+		statusLabel.SetText("状态: 保存日志功能正在开发中")
+		var saveDialog *widget.PopUp
+		btn := widget.NewButton("确定", func() {
+			if saveDialog != nil {
+				saveDialog.Hide()
+			}
+		})
+		infoCard := widget.NewCard("提示", "保存日志功能正在开发中", btn)
+		saveDialog = widget.NewModalPopUp(infoCard, ui.window.Canvas())
+		saveDialog.Show()
 	})
 	saveLogBtn.Importance = widget.MediumImportance
 
