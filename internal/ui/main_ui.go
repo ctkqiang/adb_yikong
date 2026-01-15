@@ -1,11 +1,13 @@
 package ui
 
 import (
+	"fmt"
 	"image/color"
 	"strconv"
 	"time"
 	"yikong/internal/adb"
 	"yikong/internal/constants"
+	"yikong/internal/logging"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -315,6 +317,114 @@ func (ui *UI) showFunctionPage() {
 	ui.mainContainer.Refresh()
 }
 
+// executeCommandDialog 显示命令执行对话框并执行ADB命令
+func (ui *UI) executeCommandDialog(commandKey string, commandDisplay string, params map[string]string) {
+	// 检查是否选择了设备（对于需要设备的命令）
+	// 注意：有些命令不需要设备，如adb devices
+	if ui.selectedDevice == "" && commandKey != "ADBDevices" && commandKey != "ADBDevicesL" {
+		var dialog *widget.PopUp
+		btn := widget.NewButton("确定", func() {
+			if dialog != nil {
+				dialog.Hide()
+			}
+		})
+		errorCard := widget.NewCard("错误", "请先选择一个设备", btn)
+		dialog = widget.NewModalPopUp(errorCard, ui.window.Canvas())
+		dialog.Show()
+		return
+	}
+
+	// 创建执行对话框
+	title := "执行命令: " + commandDisplay
+	outputDisplay := widget.NewMultiLineEntry()
+	outputDisplay.Wrapping = fyne.TextWrapWord
+	outputDisplay.SetPlaceHolder("命令输出将显示在这里...")
+	outputDisplay.Disable()
+
+	scrollContainer := container.NewScroll(outputDisplay)
+	scrollContainer.SetMinSize(fyne.NewSize(500, 300))
+
+	statusLabel := widget.NewLabel("准备执行...")
+	statusLabel.TextStyle = fyne.TextStyle{Bold: true}
+
+	closeBtn := widget.NewButton("关闭", nil)
+	closeBtn.Disable() // 初始禁用，执行完成后启用
+
+	var dialog *widget.PopUp
+
+	// 更新输出显示的函数
+	updateOutput := func(text string) {
+		fyne.Do(func() {
+			currentText := outputDisplay.Text
+			if currentText == "" {
+				outputDisplay.SetText(text)
+			} else {
+				outputDisplay.SetText(currentText + "\n" + text)
+			}
+			scrollContainer.ScrollToBottom()
+		})
+	}
+
+	// 执行命令
+	go func() {
+		fyne.Do(func() {
+			statusLabel.SetText("正在执行命令...")
+		})
+
+		// 设置超时时间
+		timeout := 30 * time.Second
+
+		// 执行命令
+		result, err := adb.ExecuteCommandFromConstants(
+			commandKey,
+			ui.selectedDevice, // 对于不需要设备的命令，adb.go会忽略空设备ID
+			params,
+			timeout,
+			updateOutput,
+		)
+
+		fyne.Do(func() {
+			if err != nil {
+				statusLabel.SetText("执行失败")
+				updateOutput("错误: " + err.Error())
+			} else if result != nil {
+				if result.Success {
+					statusLabel.SetText("执行成功")
+					updateOutput("命令执行完成，退出码: " + strconv.Itoa(result.ExitCode))
+				} else {
+					statusLabel.SetText("执行失败")
+					updateOutput("命令执行失败，退出码: " + strconv.Itoa(result.ExitCode))
+					if result.ErrorOutput != "" {
+						updateOutput("错误输出: " + result.ErrorOutput)
+					}
+				}
+				updateOutput("执行时间: " + result.Duration.String())
+			}
+			closeBtn.Enable()
+		})
+	}()
+
+	// 设置关闭按钮回调
+	closeBtn.OnTapped = func() {
+		if dialog != nil {
+			dialog.Hide()
+		}
+	}
+
+	// 创建对话框内容
+	content := container.NewVBox(
+		statusLabel,
+		widget.NewSeparator(),
+		scrollContainer,
+		widget.NewSeparator(),
+		closeBtn,
+	)
+
+	card := widget.NewCard(title, "", content)
+	dialog = widget.NewModalPopUp(card, ui.window.Canvas())
+	dialog.Show()
+}
+
 func (ui *UI) createDeviceManagementPage() fyne.CanvasObject {
 	// 创建标题
 	title := widget.NewLabel("设备管理")
@@ -383,28 +493,27 @@ func (ui *UI) createDeviceManagementPage() fyne.CanvasObject {
 
 	// 创建设备操作按钮
 	deviceOperations := []struct {
-		name string
-		cmd  string
+		name    string
+		cmdKey  string
+		display string
 	}{
-		{"重启设备", constants.ADBReboot},
-		{"进入Recovery模式", constants.ADBRebootRecovery},
-		{"进入Bootloader", constants.ADBRebootBootloader},
-		{"获取设备序列号", constants.ADBGetSerialNo},
-		{"获取设备状态", constants.ADBGetState},
+		{"列出设备", "ADBDevices", "adb devices"},
+		{"列出设备(长格式)", "ADBDevicesL", "adb devices -l"},
+		{"重启设备", "ADBReboot", "adb reboot"},
+		{"进入Recovery模式", "ADBRebootRecovery", "adb reboot recovery"},
+		{"进入Bootloader", "ADBRebootBootloader", "adb reboot-bootloader"},
+		{"获取设备序列号", "ADBGetSerialNo", "adb get-serialno"},
+		{"获取设备状态", "ADBGetState", "adb get-state"},
+		{"以root权限运行", "ADBRoot", "adb root"},
 	}
 
 	buttonsContainer := container.NewVBox()
 	for _, op := range deviceOperations {
-		btn := widget.NewButton(op.name, func(cmd string) func() {
+		btn := widget.NewButton(op.name, func(cmdKey string, display string) func() {
 			return func() {
-				// 创建执行命令的对话框
-				messageCard := widget.NewCard("执行命令", cmd,
-					widget.NewButton("确定", func() {}),
-				)
-				dialog := widget.NewModalPopUp(messageCard, ui.window.Canvas())
-				dialog.Show()
+				ui.executeCommandDialog(cmdKey, display, nil)
 			}
-		}(op.cmd))
+		}(op.cmdKey, op.display))
 		buttonsContainer.Add(btn)
 	}
 
@@ -428,7 +537,170 @@ func (ui *UI) createAppManagementPage() fyne.CanvasObject {
 }
 
 func (ui *UI) createLogViewingPage() fyne.CanvasObject {
-	return widget.NewLabel("日志查看功能正在开发中...")
+	// 创建标题
+	title := widget.NewLabel("日志查看")
+	title.TextStyle = fyne.TextStyle{Bold: true}
+	title.Alignment = fyne.TextAlignCenter
+
+	// 创建设备信息标签
+	var deviceInfoText string
+	if ui.selectedDevice == "" {
+		deviceInfoText = "未选择设备"
+	} else {
+		deviceInfoText = "当前设备: " + ui.selectedDevice
+	}
+	deviceInfo := widget.NewLabel(deviceInfoText)
+	deviceInfo.TextStyle = fyne.TextStyle{Italic: true}
+	deviceInfo.Alignment = fyne.TextAlignCenter
+
+	// 创建日志显示区域
+	logDisplay := widget.NewMultiLineEntry()
+	logDisplay.Wrapping = fyne.TextWrapWord
+	logDisplay.SetPlaceHolder("日志将显示在这里...")
+	logDisplay.Disable() // 设置为只读
+
+	// 创建滚动容器
+	scrollContainer := container.NewScroll(logDisplay)
+	scrollContainer.SetMinSize(fyne.NewSize(600, 400))
+
+	// 声明按钮变量，以便在闭包中引用
+	var fetchLogBtn, clearLogBtn, saveLogBtn *widget.Button
+
+	fetchLogBtn = widget.NewButton("获取日志", func() {
+		if ui.selectedDevice == "" {
+			var dialog *widget.PopUp
+			btn := widget.NewButton("确定", func() {
+				if dialog != nil {
+					dialog.Hide()
+				}
+			})
+			errorCard := widget.NewCard("错误", "请先选择一个设备", btn)
+			dialog = widget.NewModalPopUp(errorCard, ui.window.Canvas())
+			dialog.Show()
+			return
+		}
+
+		// 显示加载中
+		logDisplay.SetText("正在获取日志...")
+		fetchLogBtn.Disable()
+
+		go func() {
+			logs, err := adb.GetLogcat(ui.selectedDevice)
+			fyne.Do(func() {
+				fetchLogBtn.Enable()
+				if err != nil {
+					logging.Error("获取日志失败: deviceID=%s, 错误: %v", ui.selectedDevice, err)
+					var dialog *widget.PopUp
+					btn := widget.NewButton("确定", func() {
+						if dialog != nil {
+							dialog.Hide()
+						}
+					})
+					errorCard := widget.NewCard("错误", "获取日志失败: "+err.Error(), btn)
+					dialog = widget.NewModalPopUp(errorCard, ui.window.Canvas())
+					dialog.Show()
+					logDisplay.SetText("")
+					return
+				}
+				logging.Info("获取到日志，长度: %d 字节", len(logs))
+
+				// 处理大日志文件
+				const maxDisplaySize = 10 * 1024 * 1024 // 10MB
+				const truncateSize = 5 * 1024 * 1024    // 5MB
+
+				var displayText string
+				if len(logs) > maxDisplaySize {
+					logging.Warn("日志过大 (%d 字节)，进行截断显示", len(logs))
+					// 格式化字节大小
+					var sizeStr string
+					if len(logs) >= 1024*1024 {
+						sizeStr = fmt.Sprintf("%.1f MB", float64(len(logs))/(1024*1024))
+					} else if len(logs) >= 1024 {
+						sizeStr = fmt.Sprintf("%.1f KB", float64(len(logs))/1024)
+					} else {
+						sizeStr = fmt.Sprintf("%d 字节", len(logs))
+					}
+					displayText = logs[:truncateSize] + "\n\n... [日志过长，已截断。完整日志大小: " + sizeStr + "] ..."
+				} else {
+					displayText = logs
+				}
+
+				logDisplay.SetText(displayText)
+				logging.Info("日志已设置到UI显示组件，显示长度: %d 字节", len(displayText))
+				scrollContainer.ScrollToBottom()
+				logging.Info("已滚动到底部")
+			})
+		}()
+	})
+	fetchLogBtn.Importance = widget.HighImportance
+
+	clearLogBtn = widget.NewButton("清除日志", func() {
+		if ui.selectedDevice == "" {
+			var dialog *widget.PopUp
+			btn := widget.NewButton("确定", func() {
+				if dialog != nil {
+					dialog.Hide()
+				}
+			})
+			errorCard := widget.NewCard("错误", "请先选择一个设备", btn)
+			dialog = widget.NewModalPopUp(errorCard, ui.window.Canvas())
+			dialog.Show()
+			return
+		}
+
+		clearLogBtn.Disable()
+		go func() {
+			err := adb.ClearLogcat(ui.selectedDevice)
+			fyne.Do(func() {
+				clearLogBtn.Enable()
+				if err != nil {
+					var dialog *widget.PopUp
+					btn := widget.NewButton("确定", func() {
+						if dialog != nil {
+							dialog.Hide()
+						}
+					})
+					errorCard := widget.NewCard("错误", "清除日志失败: "+err.Error(), btn)
+					dialog = widget.NewModalPopUp(errorCard, ui.window.Canvas())
+					dialog.Show()
+					return
+				}
+				// 显示成功消息
+				logDisplay.SetText("日志缓冲区已清除")
+			})
+		}()
+	})
+	clearLogBtn.Importance = widget.MediumImportance
+
+	saveLogBtn = widget.NewButton("保存日志", func() {
+		// 保存日志功能暂未实现
+		infoCard := widget.NewCard("提示", "保存日志功能正在开发中",
+			widget.NewButton("确定", func() {
+
+			}),
+		)
+		dialog := widget.NewModalPopUp(infoCard, ui.window.Canvas())
+		dialog.Show()
+	})
+	saveLogBtn.Importance = widget.MediumImportance
+
+	// 按钮容器
+	buttonContainer := container.NewHBox(
+		fetchLogBtn,
+		clearLogBtn,
+		saveLogBtn,
+	)
+
+	// 组合所有组件
+	content := container.NewVBox(
+		title,
+		deviceInfo,
+		widget.NewSeparator(),
+		scrollContainer,
+		buttonContainer,
+	)
+
+	return container.NewPadded(content)
 }
 
 func (ui *UI) createFileTransferPage() fyne.CanvasObject {
