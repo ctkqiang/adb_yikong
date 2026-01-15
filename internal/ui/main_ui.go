@@ -553,6 +553,12 @@ func (ui *UI) createLogViewingPage() fyne.CanvasObject {
 	deviceInfo.TextStyle = fyne.TextStyle{Italic: true}
 	deviceInfo.Alignment = fyne.TextAlignCenter
 
+	// 创建状态标签
+	statusLabel := widget.NewLabel("")
+	statusLabel.TextStyle = fyne.TextStyle{Monospace: true}
+	statusLabel.Alignment = fyne.TextAlignCenter
+	statusLabel.Wrapping = fyne.TextWrapWord
+
 	// 创建日志显示区域
 	logDisplay := widget.NewMultiLineEntry()
 	logDisplay.Wrapping = fyne.TextWrapWord
@@ -582,6 +588,7 @@ func (ui *UI) createLogViewingPage() fyne.CanvasObject {
 
 		// 显示加载中
 		logDisplay.SetText("正在获取日志...")
+		statusLabel.SetText("状态: 正在获取日志...")
 		fetchLogBtn.Disable()
 
 		go func() {
@@ -604,13 +611,28 @@ func (ui *UI) createLogViewingPage() fyne.CanvasObject {
 				}
 				logging.Info("获取到日志，长度: %d 字节", len(logs))
 
+				// 更新状态标签
+				var logSizeStr string
+				if len(logs) >= 1024*1024 {
+					logSizeStr = fmt.Sprintf("%.1f MB", float64(len(logs))/(1024*1024))
+				} else if len(logs) >= 1024 {
+					logSizeStr = fmt.Sprintf("%.1f KB", float64(len(logs))/1024)
+				} else {
+					logSizeStr = fmt.Sprintf("%d 字节", len(logs))
+				}
+				statusLabel.SetText(fmt.Sprintf("状态: 获取到日志，长度: %s", logSizeStr))
+
 				// 处理大日志文件
 				const maxDisplaySize = 10 * 1024 * 1024 // 10MB
-				const truncateSize = 5 * 1024 * 1024    // 5MB
+				const headSize = 1 * 1024 * 1024        // 显示开头1MB
+				const tailSize = 4 * 1024 * 1024        // 显示结尾4MB
 
 				var displayText string
 				if len(logs) > maxDisplaySize {
-					logging.Warn("日志过大 (%d 字节)，进行截断显示", len(logs))
+					logging.Warn("日志过大 (%d 字节)，进行智能截断显示", len(logs))
+					// 更新状态标签
+					statusLabel.SetText(fmt.Sprintf("状态: 日志过大 (%s)，已进行智能截断显示", logSizeStr))
+
 					// 格式化字节大小
 					var sizeStr string
 					if len(logs) >= 1024*1024 {
@@ -620,13 +642,51 @@ func (ui *UI) createLogViewingPage() fyne.CanvasObject {
 					} else {
 						sizeStr = fmt.Sprintf("%d 字节", len(logs))
 					}
-					displayText = logs[:truncateSize] + "\n\n... [日志过长，已截断。完整日志大小: " + sizeStr + "] ..."
+
+					// 智能截断：显示开头和结尾部分
+					headPart := logs[:headSize]
+					tailPart := logs[len(logs)-tailSize:]
+					// 格式化headSize和tailSize用于显示
+					var headSizeStr, tailSizeStr string
+					if headSize >= 1024*1024 {
+						headSizeStr = fmt.Sprintf("%d MB", headSize/(1024*1024))
+					} else if headSize >= 1024 {
+						headSizeStr = fmt.Sprintf("%d KB", headSize/1024)
+					} else {
+						headSizeStr = fmt.Sprintf("%d 字节", headSize)
+					}
+					if tailSize >= 1024*1024 {
+						tailSizeStr = fmt.Sprintf("%d MB", tailSize/(1024*1024))
+					} else if tailSize >= 1024 {
+						tailSizeStr = fmt.Sprintf("%d KB", tailSize/1024)
+					} else {
+						tailSizeStr = fmt.Sprintf("%d 字节", tailSize)
+					}
+
+					displayText = headPart + "\n\n... [日志过长，已智能截断。显示开头" + headSizeStr + "和结尾" + tailSizeStr + "，完整日志大小: " + sizeStr + "] ...\n\n" + tailPart
 				} else {
 					displayText = logs
 				}
 
 				logDisplay.SetText(displayText)
 				logging.Info("日志已设置到UI显示组件，显示长度: %d 字节", len(displayText))
+
+				// 更新状态标签显示最终状态
+				var displaySizeStr string
+				if len(displayText) >= 1024*1024 {
+					displaySizeStr = fmt.Sprintf("%.1f MB", float64(len(displayText))/(1024*1024))
+				} else if len(displayText) >= 1024 {
+					displaySizeStr = fmt.Sprintf("%.1f KB", float64(len(displayText))/1024)
+				} else {
+					displaySizeStr = fmt.Sprintf("%d 字节", len(displayText))
+				}
+				currentStatus := statusLabel.Text
+				if len(logs) > maxDisplaySize {
+					statusLabel.SetText(fmt.Sprintf("%s | 显示长度: %s (已截断)", currentStatus, displaySizeStr))
+				} else {
+					statusLabel.SetText(fmt.Sprintf("%s | 显示长度: %s", currentStatus, displaySizeStr))
+				}
+
 				scrollContainer.ScrollToBottom()
 				logging.Info("已滚动到底部")
 			})
@@ -695,6 +755,7 @@ func (ui *UI) createLogViewingPage() fyne.CanvasObject {
 	content := container.NewVBox(
 		title,
 		deviceInfo,
+		statusLabel,
 		widget.NewSeparator(),
 		scrollContainer,
 		buttonContainer,
