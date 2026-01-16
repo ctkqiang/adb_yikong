@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image/color"
 	"strconv"
+	"strings"
 	"time"
 	"yikong/internal/adb"
 	"yikong/internal/constants"
@@ -22,6 +23,13 @@ type UI struct {
 	deviceList     *widget.List
 	devices        []adb.Device
 	selectedDevice string
+
+	// 日志查看页面相关字段
+	logStream          *adb.LogcatStream
+	isLogStreamRunning bool
+	logDisplay         *widget.Entry
+	logStatusLabel     *widget.Label
+	logScrollContainer *container.Scroll
 }
 
 func MainUI(window fyne.Window) fyne.CanvasObject {
@@ -569,8 +577,142 @@ func (ui *UI) createLogViewingPage() fyne.CanvasObject {
 	scrollContainer := container.NewScroll(logDisplay)
 	scrollContainer.SetMinSize(fyne.NewSize(600, 400))
 
+	// 保存UI组件引用到结构体
+	ui.logDisplay = logDisplay
+	ui.logStatusLabel = statusLabel
+	ui.logScrollContainer = scrollContainer
+
 	// 声明按钮变量，以便在闭包中引用
-	var fetchLogBtn, clearLogBtn, saveLogBtn *widget.Button
+	var fetchLogBtn, clearLogBtn, saveLogBtn, startLiveLogBtn, stopLiveLogBtn *widget.Button
+
+	// 更新实时日志按钮状态
+	updateLiveLogButtons := func() {
+		if ui.isLogStreamRunning {
+			startLiveLogBtn.Disable()
+			stopLiveLogBtn.Enable()
+		} else {
+			startLiveLogBtn.Enable()
+			stopLiveLogBtn.Disable()
+		}
+	}
+
+	// 实时日志输出回调函数
+	liveLogCallback := func(line string) {
+		fyne.Do(func() {
+			// 获取当前文本
+			currentText := logDisplay.Text
+
+			// 限制日志显示大小，避免内存无限增长
+			const maxDisplayTextSize = 5 * 1024 * 1024 // 5MB
+
+			var newText string
+			if len(currentText)+len(line)+1 > maxDisplayTextSize {
+				// 如果超过限制，截断旧的部分，保留新的部分
+				// 保留最后4MB的内容
+				const keepSize = 4 * 1024 * 1024
+				if len(currentText) > keepSize {
+					// 找到合适的位置截断
+					truncatePos := len(currentText) - keepSize
+					// 找到下一个换行符的位置
+					newlinePos := strings.Index(currentText[truncatePos:], "\n")
+					if newlinePos != -1 {
+						truncatePos += newlinePos + 1
+					}
+					newText = currentText[truncatePos:] + line + "\n"
+				} else {
+					newText = currentText + line + "\n"
+				}
+			} else {
+				newText = currentText + line + "\n"
+			}
+
+			logDisplay.SetText(newText)
+
+			// 自动滚动到底部
+			scrollContainer.ScrollToBottom()
+		})
+	}
+
+	startLiveLogBtn = widget.NewButton("开始实时日志", func() {
+		if ui.selectedDevice == "" {
+			statusLabel.SetText("状态: 请先选择一个设备")
+			var dialog *widget.PopUp
+			btn := widget.NewButton("确定", func() {
+				if dialog != nil {
+					dialog.Hide()
+				}
+			})
+			errorCard := widget.NewCard("错误", "请先选择一个设备", btn)
+			dialog = widget.NewModalPopUp(errorCard, ui.window.Canvas())
+			dialog.Show()
+			return
+		}
+
+		if ui.isLogStreamRunning {
+			statusLabel.SetText("状态: 实时日志已经在运行")
+			return
+		}
+
+		startLiveLogBtn.Disable()
+		statusLabel.SetText("状态: 正在启动实时日志...")
+		logDisplay.SetText("正在启动实时日志...\n")
+
+		go func() {
+			stream, err := adb.StreamLogcat(ui.selectedDevice, liveLogCallback)
+			fyne.Do(func() {
+				if err != nil {
+					startLiveLogBtn.Enable()
+					statusLabel.SetText(fmt.Sprintf("状态: 启动实时日志失败 - %v", err))
+					logDisplay.SetText(fmt.Sprintf("启动实时日志失败: %v\n", err))
+
+					var dialog *widget.PopUp
+					btn := widget.NewButton("确定", func() {
+						if dialog != nil {
+							dialog.Hide()
+						}
+					})
+					errorCard := widget.NewCard("错误", "启动实时日志失败: "+err.Error(), btn)
+					dialog = widget.NewModalPopUp(errorCard, ui.window.Canvas())
+					dialog.Show()
+					return
+				}
+
+				ui.logStream = stream
+
+				ui.isLogStreamRunning = true
+				updateLiveLogButtons()
+				statusLabel.SetText("状态: 实时日志已启动，正在接收日志...")
+				logDisplay.SetText("实时日志已启动，正在接收日志...\n")
+
+				logging.Info("实时日志流已启动: deviceID=%s", ui.selectedDevice)
+			})
+		}()
+	})
+	startLiveLogBtn.Importance = widget.HighImportance
+
+	stopLiveLogBtn = widget.NewButton("停止实时日志", func() {
+		if !ui.isLogStreamRunning || ui.logStream == nil {
+			statusLabel.SetText("状态: 没有正在运行的实时日志")
+			return
+		}
+
+		stopLiveLogBtn.Disable()
+		statusLabel.SetText("状态: 正在停止实时日志...")
+
+		go func() {
+			ui.logStream.Stop()
+			fyne.Do(func() {
+				ui.isLogStreamRunning = false
+				ui.logStream = nil
+				updateLiveLogButtons()
+				statusLabel.SetText("状态: 实时日志已停止")
+				logDisplay.SetText(logDisplay.Text + "\n实时日志已停止\n")
+				logging.Info("实时日志流已停止: deviceID=%s", ui.selectedDevice)
+			})
+		}()
+	})
+	stopLiveLogBtn.Importance = widget.HighImportance
+	stopLiveLogBtn.Disable() // 初始状态禁用
 
 	fetchLogBtn = widget.NewButton("获取日志", func() {
 		if ui.selectedDevice == "" {
@@ -752,8 +894,15 @@ func (ui *UI) createLogViewingPage() fyne.CanvasObject {
 	})
 	saveLogBtn.Importance = widget.MediumImportance
 
-	// 按钮容器
-	buttonContainer := container.NewHBox(
+	// 按钮容器 - 第一行：实时日志控制
+	liveLogButtonContainer := container.NewHBox(
+		startLiveLogBtn,
+		stopLiveLogBtn,
+		widget.NewSeparator(),
+	)
+
+	// 按钮容器 - 第二行：其他功能
+	otherButtonContainer := container.NewHBox(
 		fetchLogBtn,
 		clearLogBtn,
 		saveLogBtn,
@@ -766,7 +915,8 @@ func (ui *UI) createLogViewingPage() fyne.CanvasObject {
 		statusLabel,
 		widget.NewSeparator(),
 		scrollContainer,
-		buttonContainer,
+		liveLogButtonContainer,
+		otherButtonContainer,
 	)
 
 	return container.NewPadded(content)

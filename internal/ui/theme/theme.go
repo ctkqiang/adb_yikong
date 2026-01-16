@@ -10,6 +10,10 @@ import (
 
 type CustomTheme struct{}
 
+const (
+	ColorNameLogText fyne.ThemeColorName = "logText"
+)
+
 var (
 	// 主色调 - 粉色系
 	PrimaryPink   = color.NRGBA{R: 255, G: 105, B: 180, A: 255} // #FF69B4 热粉色
@@ -21,7 +25,7 @@ var (
 	White     = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
 	SoftGray  = color.NRGBA{R: 248, G: 248, B: 248, A: 255}
 	WarmGray  = color.NRGBA{R: 245, G: 245, B: 245, A: 255}
-	TextDark  = color.NRGBA{R: 74, G: 74, B: 74, A: 255}
+	TextDark  = color.NRGBA{R: 0, G: 0, B: 0, A: 255}
 	TextLight = color.NRGBA{R: 136, G: 136, B: 136, A: 255}
 
 	// 装饰色彩
@@ -37,7 +41,7 @@ func (m CustomTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant) 
 	case theme.ColorNameButton:
 		return PrimaryPink
 	case theme.ColorNameDisabled:
-		return LightPink
+		return TextDark
 	case theme.ColorNameDisabledButton:
 		return WarmGray
 	case theme.ColorNameError:
@@ -62,6 +66,8 @@ func (m CustomTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant) 
 		return Lavender
 	case theme.ColorNameShadow:
 		return color.NRGBA{R: 0, G: 0, B: 0, A: 25}
+	case ColorNameLogText:
+		return White
 	default:
 		return theme.DefaultTheme().Color(name, variant)
 	}

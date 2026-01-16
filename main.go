@@ -7,6 +7,7 @@ import (
 	constant "yikong/internal/constants"
 	"yikong/internal/logging"
 	"yikong/internal/ui"
+	"yikong/internal/ui/theme"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
@@ -32,6 +33,7 @@ func main() {
 	}
 
 	application := app.New()
+	application.Settings().SetTheme(&theme.CustomTheme{})
 	window := application.NewWindow(constant.AppName)
 
 	var appIcon fyne.Resource

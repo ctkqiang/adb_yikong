@@ -316,3 +316,164 @@ func ExecuteCommandFromConstants(commandKey string, deviceID string, params map[
 		return ExecuteADBCommand(args, timeout)
 	}
 }
+
+// LogcatStream 表示一个流式日志会话
+type LogcatStream struct {
+	deviceID    string
+	ctx         context.Context
+	cancel      context.CancelFunc
+	isRunning   bool
+	outputChan  chan string
+	errorChan   chan error
+}
+
+// StartLogcatStream 启动实时日志流
+// deviceID: 设备ID
+// outputCallback: 日志输出回调函数，每行日志都会调用此函数
+// filterArgs: 可选的过滤参数，如 []string{"*:V"} 表示显示所有级别的日志
+// 返回一个LogcatStream实例，可以用于停止日志流
+func StartLogcatStream(deviceID string, outputCallback func(line string), filterArgs ...string) (*LogcatStream, error) {
+	log.Printf("启动实时日志流: deviceID=%s, filterArgs=%v", deviceID, filterArgs)
+	
+	ctx, cancel := context.WithCancel(context.Background())
+	
+	stream := &LogcatStream{
+		deviceID:   deviceID,
+		ctx:        ctx,
+		cancel:     cancel,
+		isRunning:  true,
+		outputChan: make(chan string, 1000),  // 缓冲通道，避免阻塞
+		errorChan:  make(chan error, 1),
+	}
+	
+	// 构建命令参数
+	args := []string{"-s", deviceID, "logcat"}
+	if len(filterArgs) > 0 {
+		args = append(args, filterArgs...)
+	}
+	
+	// 启动命令
+	go func() {
+		defer func() {
+			stream.isRunning = false
+			close(stream.outputChan)
+			close(stream.errorChan)
+			log.Printf("日志流已停止: deviceID=%s", deviceID)
+		}()
+		
+		cmd := exec.CommandContext(ctx, "adb", args...)
+		
+		// 创建管道用于实时读取
+		stdoutPipe, err := cmd.StdoutPipe()
+		if err != nil {
+			stream.errorChan <- err
+			return
+		}
+		
+		stderrPipe, err := cmd.StderrPipe()
+		if err != nil {
+			stream.errorChan <- err
+			return
+		}
+		
+		// 启动命令
+		if err := cmd.Start(); err != nil {
+			stream.errorChan <- err
+			return
+		}
+		
+		log.Printf("实时日志流已启动: deviceID=%s, PID=%d", deviceID, cmd.Process.Pid)
+		
+		// 实时读取标准输出
+		go func() {
+			scanner := bufio.NewScanner(stdoutPipe)
+			for scanner.Scan() {
+				line := scanner.Text()
+				select {
+				case stream.outputChan <- line:
+					// 成功发送到通道
+				case <-ctx.Done():
+					return
+				default:
+					// 通道已满，丢弃旧的日志行，保留新的
+					// 这是为了在高频日志下避免内存泄漏
+					select {
+					case <-stream.outputChan: // 丢弃一条旧日志
+						stream.outputChan <- line // 插入新日志
+					default:
+						// 如果还是满的，继续尝试
+					}
+				}
+			}
+			
+			if err := scanner.Err(); err != nil {
+				log.Printf("读取日志输出错误: %v", err)
+			}
+		}()
+		
+		// 读取标准错误
+		go func() {
+			scanner := bufio.NewScanner(stderrPipe)
+			for scanner.Scan() {
+				line := scanner.Text()
+				log.Printf("日志流错误输出: %s", line)
+			}
+		}()
+		
+		// 处理输出通道，调用回调函数
+		go func() {
+			for {
+				select {
+				case line, ok := <-stream.outputChan:
+					if !ok {
+						return
+					}
+					if outputCallback != nil {
+						outputCallback(line)
+					}
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
+		
+		// 等待命令完成或上下文取消
+		err = cmd.Wait()
+		if err != nil {
+			// 如果是上下文取消导致的错误，是正常的
+			if ctx.Err() == context.Canceled {
+				log.Printf("日志流被正常停止: deviceID=%s", deviceID)
+				return
+			}
+			log.Printf("日志流异常终止: deviceID=%s, 错误: %v", deviceID, err)
+			stream.errorChan <- err
+		}
+	}()
+	
+	return stream, nil
+}
+
+// Stop 停止日志流
+func (s *LogcatStream) Stop() {
+	if s == nil || !s.isRunning {
+		return
+	}
+	
+	log.Printf("正在停止日志流: deviceID=%s", s.deviceID)
+	s.cancel()
+	s.isRunning = false
+}
+
+// IsRunning 检查日志流是否正在运行
+func (s *LogcatStream) IsRunning() bool {
+	if s == nil {
+		return false
+	}
+	return s.isRunning
+}
+
+// StreamLogcat 启动实时日志流（简化接口）
+// 这是一个方便使用的函数，内部调用StartLogcatStream
+func StreamLogcat(deviceID string, outputCallback func(line string), filterArgs ...string) (*LogcatStream, error) {
+	return StartLogcatStream(deviceID, outputCallback, filterArgs...)
+}
