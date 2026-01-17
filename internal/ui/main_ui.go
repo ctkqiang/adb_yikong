@@ -13,6 +13,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
@@ -567,6 +568,18 @@ func (ui *UI) createLogViewingPage() fyne.CanvasObject {
 	statusLabel.Alignment = fyne.TextAlignCenter
 	statusLabel.Wrapping = fyne.TextWrapWord
 
+	// 创建新日志指示器
+	newLogIndicator := canvas.NewCircle(color.NRGBA{R: 255, G: 0, B: 0, A: 255})
+	newLogIndicator.Resize(fyne.NewSize(12, 12))
+	newLogIndicator.Hide()
+
+	// 创建指示器容器
+	indicatorContainer := container.NewHBox(
+		widget.NewLabel("新日志:"),
+		newLogIndicator,
+	)
+	indicatorContainer.Hide()
+
 	// 创建日志显示区域
 	logDisplay := widget.NewMultiLineEntry()
 	logDisplay.Wrapping = fyne.TextWrapWord
@@ -597,6 +610,7 @@ func (ui *UI) createLogViewingPage() fyne.CanvasObject {
 	}
 
 	// 实时日志输出回调函数
+	// 支持自动滚动、手动滚动锁定和新日志指示功能
 	liveLogCallback := func(line string) {
 		fyne.Do(func() {
 			// 获取当前文本
@@ -628,8 +642,24 @@ func (ui *UI) createLogViewingPage() fyne.CanvasObject {
 
 			logDisplay.SetText(newText)
 
-			// 自动滚动到底部
-			scrollContainer.ScrollToBottom()
+			// 智能滚动控制
+			if ui.logStream != nil && ui.logStream.ShouldAutoScroll() {
+				// 平滑滚动到底部
+				scrollContainer.ScrollToBottom()
+				// 隐藏新日志指示器
+				newLogIndicator.Hide()
+				indicatorContainer.Hide()
+			} else if ui.logStream != nil {
+				// 标记有新日志到达
+				ui.logStream.SetHasNewLogsBelow(true)
+				// 显示新日志指示器
+				newLogIndicator.Show()
+				indicatorContainer.Show()
+				// 更新状态提示
+				if statusLabel.Text != "状态: 实时日志运行中 (有新日志)" {
+					statusLabel.SetText("状态: 实时日志运行中 (有新日志)")
+				}
+			}
 		})
 	}
 
@@ -894,11 +924,57 @@ func (ui *UI) createLogViewingPage() fyne.CanvasObject {
 	})
 	saveLogBtn.Importance = widget.MediumImportance
 
+	// 自动滚动控制
+	autoScrollToggle := widget.NewCheck("启用自动滚动", func(enabled bool) {
+		if ui.logStream != nil {
+			ui.logStream.SetAutoScrollEnabled(enabled)
+			if enabled {
+				statusLabel.SetText("状态: 自动滚动已启用")
+				// 立即滚动到底部
+				scrollContainer.ScrollToBottom()
+			} else {
+				statusLabel.SetText("状态: 自动滚动已禁用")
+			}
+		}
+	})
+	autoScrollToggle.SetChecked(true) // 默认启用
+
+	// 滚动到底部按钮
+	scrollToBottomBtn := widget.NewButton("滚动到底部", func() {
+		scrollContainer.ScrollToBottom()
+		if ui.logStream != nil {
+			ui.logStream.ResetScrollLock()
+			statusLabel.SetText("状态: 已滚动到底部")
+		}
+	})
+
+	// 添加滚动事件监听
+	scrollContainer.OnScrolled = func(pos fyne.Position) {
+		if ui.logStream != nil {
+			// 计算滚动位置比例 (0.0-1.0)
+			maxScroll := scrollContainer.Content.Size().Height - scrollContainer.Size().Height
+			if maxScroll > 0 {
+				scrollRatio := float64(pos.Y) / float64(maxScroll)
+				ui.logStream.SetScrollPosition(scrollRatio)
+
+				// 如果滚动到底部，清除新日志提示
+				if scrollRatio >= 0.95 {
+					ui.logStream.SetHasNewLogsBelow(false)
+					if strings.Contains(statusLabel.Text, "有新日志") {
+						statusLabel.SetText("状态: 实时日志运行中")
+					}
+				}
+			}
+		}
+	}
+
 	// 按钮容器 - 第一行：实时日志控制
 	liveLogButtonContainer := container.NewHBox(
 		startLiveLogBtn,
 		stopLiveLogBtn,
 		widget.NewSeparator(),
+		autoScrollToggle,
+		scrollToBottomBtn,
 	)
 
 	// 按钮容器 - 第二行：其他功能
@@ -908,16 +984,34 @@ func (ui *UI) createLogViewingPage() fyne.CanvasObject {
 		saveLogBtn,
 	)
 
+	// 创建状态区域
+	statusArea := container.NewHBox(
+		statusLabel,
+		layout.NewSpacer(),
+		indicatorContainer,
+	)
+
 	// 组合所有组件
 	content := container.NewVBox(
 		title,
 		deviceInfo,
-		statusLabel,
+		statusArea,
 		widget.NewSeparator(),
 		scrollContainer,
 		liveLogButtonContainer,
 		otherButtonContainer,
 	)
+
+	// 添加键盘快捷键支持
+	ui.window.Canvas().SetOnTypedKey(func(ev *fyne.KeyEvent) {
+		// 空格键可以快速滚动到底部
+		if ev.Name == fyne.KeySpace {
+			scrollContainer.ScrollToBottom()
+			if ui.logStream != nil {
+				ui.logStream.ResetScrollLock()
+			}
+		}
+	})
 
 	return container.NewPadded(content)
 }

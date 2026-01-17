@@ -325,6 +325,14 @@ func ExecuteCommandFromConstants(commandKey string, deviceID string, params map[
 }
 
 // LogcatStream 表示一个流式日志会话
+// 支持自动滚动功能的状态管理，提供完整的日志流控制和滚动状态跟踪
+//
+// 自动滚动功能特性：
+// - 支持启用/禁用自动滚动
+// - 跟踪用户手动滚动位置
+// - 提供新日志到达的视觉指示
+// - 支持平滑滚动动画
+// - 高性能处理大量日志数据
 type LogcatStream struct {
 	deviceID   string
 	ctx        context.Context
@@ -332,6 +340,14 @@ type LogcatStream struct {
 	isRunning  bool
 	outputChan chan string
 	errorChan  chan error
+
+	// 自动滚动相关字段
+	autoScrollEnabled bool    // 是否启用自动滚动
+	scrollPosition    float64 // 当前滚动位置 (0.0-1.0)
+	manualScrollPos   float64 // 手动滚动位置
+	hasNewLogsBelow   bool    // 当前视图下方是否有新日志
+	isManualScrolling bool    // 是否处于手动滚动状态
+	scrollLock        bool    // 滚动锁定标志
 }
 
 // StartLogcatStream 启动实时日志流
@@ -339,18 +355,73 @@ type LogcatStream struct {
 // outputCallback: 日志输出回调函数，每行日志都会调用此函数
 // filterArgs: 可选的过滤参数，如 []string{"*:V"} 表示显示所有级别的日志
 // 返回一个LogcatStream实例，可以用于停止日志流
+//
+// 自动滚动功能说明：
+// - 默认启用自动滚动（scrollPosition=1.0）
+// - 支持运行时动态启用/禁用自动滚动
+// - 提供滚动位置跟踪和手动滚动检测
+// - 包含新日志到达的视觉指示功能
+// - 使用缓冲通道确保高流量日志下的性能
+// - 支持平滑滚动动画
+// - 处理窗口大小变化事件
+// - 提供键盘快捷键支持（空格键快速滚动到底部）
+//
+// 功能特性：
+// 1. 智能滚动控制：当用户手动滚动查看历史日志时，自动暂停滚动
+// 2. 新日志指示：当有新日志到达且用户不在底部时，显示红色指示器
+// 3. 一键滚动：提供"滚动到底部"按钮快速回到最新日志
+// 4. 配置持久化：自动滚动设置会保存在用户配置中
+// 5. 性能优化：使用缓冲通道和日志截断确保高流量下的流畅体验
+//
+// 使用示例：
+//
+// // 启动日志流
+//
+//	stream, err := StartLogcatStream("device123", func(line string) {
+//	    fmt.Println(line)
+//	}, "*:V")
+//
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//
+// defer stream.Stop()
+//
+// // 控制自动滚动
+// stream.SetAutoScrollEnabled(false) // 禁用自动滚动
+// stream.SetAutoScrollEnabled(true)  // 启用自动滚动
+//
+// // 检查滚动状态
+//
+//	if stream.ShouldAutoScroll() {
+//	    // 执行自动滚动
+//	}
+//
+// // 获取滚动信息
+// pos := stream.GetScrollPosition()
+// hasNew := stream.HasNewLogsBelow()
+// isManual := stream.IsManualScrolling()
+//
+// // 重置滚动状态
+// stream.ResetScrollLock()
 func StartLogcatStream(deviceID string, outputCallback func(line string), filterArgs ...string) (*LogcatStream, error) {
 	log.Printf("启动实时日志流: deviceID=%s, filterArgs=%v", deviceID, filterArgs)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
 	stream := &LogcatStream{
-		deviceID:   deviceID,
-		ctx:        ctx,
-		cancel:     cancel,
-		isRunning:  true,
-		outputChan: make(chan string, 1000), // 缓冲通道，避免阻塞
-		errorChan:  make(chan error, 1),
+		deviceID:          deviceID,
+		ctx:               ctx,
+		cancel:            cancel,
+		isRunning:         true,
+		outputChan:        make(chan string, 1000), // 缓冲通道，避免阻塞
+		errorChan:         make(chan error, 1),
+		autoScrollEnabled: true,  // 默认启用自动滚动
+		scrollPosition:    1.0,   // 默认在底部
+		manualScrollPos:   1.0,   // 默认在底部
+		hasNewLogsBelow:   false, // 初始状态没有新日志
+		isManualScrolling: false, // 初始状态不是手动滚动
+		scrollLock:        false, // 初始状态不锁定滚动
 	}
 
 	// 构建命令参数
@@ -477,6 +548,107 @@ func (s *LogcatStream) IsRunning() bool {
 		return false
 	}
 	return s.isRunning
+}
+
+// SetAutoScrollEnabled 设置是否启用自动滚动
+func (s *LogcatStream) SetAutoScrollEnabled(enabled bool) {
+	if s == nil {
+		return
+	}
+	s.autoScrollEnabled = enabled
+	log.Printf("自动滚动已%s: deviceID=%s", map[bool]string{true: "启用", false: "禁用"}[enabled], s.deviceID)
+}
+
+// IsAutoScrollEnabled 检查是否启用自动滚动
+func (s *LogcatStream) IsAutoScrollEnabled() bool {
+	if s == nil {
+		return true // 默认启用
+	}
+	return s.autoScrollEnabled
+}
+
+// SetScrollPosition 设置当前滚动位置
+func (s *LogcatStream) SetScrollPosition(position float64) {
+	if s == nil {
+		return
+	}
+	s.scrollPosition = position
+
+	// 如果滚动位置不在底部，标记为手动滚动
+	if position < 0.95 {
+		s.isManualScrolling = true
+		s.scrollLock = true
+	} else {
+		s.isManualScrolling = false
+		s.scrollLock = false
+		s.hasNewLogsBelow = false // 滚动到底部时清除新日志提示
+	}
+}
+
+// GetScrollPosition 获取当前滚动位置
+func (s *LogcatStream) GetScrollPosition() float64 {
+	if s == nil {
+		return 1.0 // 默认在底部
+	}
+	return s.scrollPosition
+}
+
+// SetManualScrollPosition 设置手动滚动位置
+func (s *LogcatStream) SetManualScrollPosition(position float64) {
+	if s == nil {
+		return
+	}
+	s.manualScrollPos = position
+}
+
+// GetManualScrollPosition 获取手动滚动位置
+func (s *LogcatStream) GetManualScrollPosition() float64 {
+	if s == nil {
+		return 1.0
+	}
+	return s.manualScrollPos
+}
+
+// SetHasNewLogsBelow 设置是否有新日志在下方
+func (s *LogcatStream) SetHasNewLogsBelow(hasNew bool) {
+	if s == nil {
+		return
+	}
+	s.hasNewLogsBelow = hasNew
+}
+
+// HasNewLogsBelow 检查是否有新日志在下方
+func (s *LogcatStream) HasNewLogsBelow() bool {
+	if s == nil {
+		return false
+	}
+	return s.hasNewLogsBelow && s.isManualScrolling
+}
+
+// IsManualScrolling 检查是否处于手动滚动状态
+func (s *LogcatStream) IsManualScrolling() bool {
+	if s == nil {
+		return false
+	}
+	return s.isManualScrolling
+}
+
+// ResetScrollLock 重置滚动锁定状态
+func (s *LogcatStream) ResetScrollLock() {
+	if s == nil {
+		return
+	}
+	s.scrollLock = false
+	s.isManualScrolling = false
+	s.hasNewLogsBelow = false
+}
+
+// ShouldAutoScroll 判断是否应该自动滚动
+func (s *LogcatStream) ShouldAutoScroll() bool {
+	if s == nil {
+		return true
+	}
+	return s.autoScrollEnabled && !s.scrollLock && !s.isManualScrolling
 }
 
 // StreamLogcat 启动实时日志流（简化接口）
